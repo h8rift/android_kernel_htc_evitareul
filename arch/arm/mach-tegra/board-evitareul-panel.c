@@ -4186,6 +4186,9 @@ static void bkl_update(unsigned long data) {
  * to keep the code out of the display driver, keeping it closer to upstream
  */
 struct early_suspend evitareul_panel_early_suspender;
+#ifdef CONFIG_HTC_ONMODE_CHARGING
+struct early_suspend evitareul_panel_onchg_suspender;
+#endif
 
 static void evitareul_panel_early_suspend(struct early_suspend *h)
 {
@@ -4219,8 +4222,6 @@ static void evitareul_panel_early_suspend(struct early_suspend *h)
 	DISP_INFO_OUT();
 }
 
-
-
 static void evitareul_panel_late_resume(struct early_suspend *h)
 {
 	DISP_INFO_IN();
@@ -4236,6 +4237,36 @@ static void evitareul_panel_late_resume(struct early_suspend *h)
 	mod_timer(&bkl_timer, jiffies + msecs_to_jiffies(50));
 	DISP_INFO_OUT();
 }
+#ifdef CONFIG_HTC_ONMODE_CHARGING
+static void evitareul_panel_onchg_suspend(struct early_suspend *h)
+{
+	DISP_INFO_IN();
+
+	struct backlight_device *bl = platform_get_drvdata(&evitareul_disp1_backlight_device);
+	if (bl && bl->props.bkl_on) {
+		bl->props.bkl_on = 0;
+		del_timer_sync(&bkl_timer);
+		flush_workqueue(bkl_wq);
+	}
+
+	/* power down LCD */
+	if (num_registered_fb > 0)
+		fb_blank(registered_fb[0], FB_BLANK_POWERDOWN);
+
+	DISP_INFO_OUT();
+}
+
+static void evitareul_panel_onchg_resume(struct early_suspend *h)
+{
+	DISP_INFO_IN();
+	unsigned i;
+
+	fb_blank(registered_fb[0], FB_BLANK_UNBLANK);
+
+	mod_timer(&bkl_timer, jiffies + msecs_to_jiffies(50));
+	DISP_INFO_OUT();
+}
+#endif /* onmode charge */
 #endif
 
 #define CAB_LOW		1
@@ -4335,6 +4366,12 @@ int __init evitareul_panel_init(void)
 	evitareul_panel_early_suspender.resume = evitareul_panel_late_resume;
 	evitareul_panel_early_suspender.level = EARLY_SUSPEND_LEVEL_DISABLE_FB;
 	register_early_suspend(&evitareul_panel_early_suspender);
+#ifdef CONFIG_HTC_ONMODE_CHARGING
+	evitareul_panel_onchg_suspender.suspend = evitareul_panel_onchg_suspend;
+	evitareul_panel_onchg_suspender.resume = evitareul_panel_onchg_resume;
+	evitareul_panel_onchg_suspender.level = EARLY_SUSPEND_LEVEL_DISABLE_FB;
+	register_onchg_suspend(&evitareul_panel_onchg_suspender);
+#endif
 #endif
 
 #ifdef CONFIG_TEGRA_GRHOST
